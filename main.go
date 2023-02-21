@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -8,25 +9,39 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		log.Fatalln("usage", os.Args[0], "cut_gzip_filename")
+	var (
+		day time.Time
+		err error
+
+		ptrPath = flag.String("path", "", "file or path to Magiline {epoch}.json.gz files")
+		ptrDay  = flag.String(
+			"day", "", "filter to keep only files {epoch}.json[.gz] where d(utc) <= epoch < d+1(utc) ")
+	)
+	flag.Parse()
+	if *ptrPath == "" {
+		fmt.Println("Please provide a path where {epoch}.json.gz can be found")
+		return
 	}
-	for i, filename := range os.Args {
-		if i == 0 {
-			continue
+	if *ptrDay != "" {
+		if day, err = time.ParseInLocation("20060102", *ptrDay, time.UTC); err != nil {
+			log.Fatal("unabme to parse day", *ptrDay, err)
 		}
-		if err := dump(filename); err != nil {
-			log.Fatal("unable to dump file", filename, err)
-		}
+	}
+
+	if err := Dump(*ptrPath, day); err != nil {
+		log.Fatal("unable to dump file", *ptrPath, err)
 	}
 }
 
-func dump(fileorpath string) error {
+const Suffix = ".json.gz"
+
+func Dump(fileorpath string, day time.Time) error {
 	file, err := os.Open(fileorpath)
 	if err != nil {
 		return fmt.Errorf("unable to open %s", err)
@@ -39,8 +54,13 @@ func dump(fileorpath string) error {
 	// IsDir is short for fileInfo.Mode().IsDir()
 	isDir := fileInfo.IsDir()
 	file.Close()
+	var epochMin, epochMax int
+	if !day.IsZero() {
+		epochMin = int(day.Unix())
+		epochMax = int(day.Add(24 * time.Hour).Unix())
+	}
 	if isDir {
-		// get all file names and sort from timesampt
+		// get all file names and sort from timestamp
 		filenames := make([]string, 0)
 		elsaped := time.Now()
 		if err = filepath.Walk(fileorpath, func(subpath string, info fs.FileInfo, err error) error {
@@ -52,7 +72,17 @@ func dump(fileorpath string) error {
 				return nil
 			}
 			// keep only single full bow stats (trick)
-			if !strings.HasPrefix(filepath.Base(subpath), "1") {
+			base := filepath.Base(subpath)
+			if !strings.HasSuffix(base, Suffix) {
+				return nil
+			}
+			epoch, eerr := strconv.Atoi(base[0 : len(base)-len(Suffix)])
+			if eerr != nil {
+				// not an {epoch}.§json.gzip file
+				return nil
+			}
+			if epochMin != 0 && (epoch < epochMin || epoch >= epochMax) {
+				// not the right day
 				return nil
 			}
 			filenames = append(filenames, subpath)
@@ -64,7 +94,7 @@ func dump(fileorpath string) error {
 		}); err != nil {
 			return fmt.Errorf("error walking the path %s", err)
 		}
-		// sort it now
+		// sort it now using epoch
 		sort.Slice(filenames, func(i, j int) bool {
 			return filepath.Base(filenames[i]) < filepath.Base(filenames[j])
 		})
