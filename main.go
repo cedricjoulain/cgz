@@ -30,13 +30,15 @@ func main() {
 	}
 	if *ptrDay != "" {
 		if day, err = time.ParseInLocation("20060102", *ptrDay, time.UTC); err != nil {
-			log.Fatal("unabme to parse day", *ptrDay, err)
+			log.Fatal("unable to parse day", *ptrDay, err)
 		}
 	}
 
+	elapsed := time.Now()
 	if err := Dump(*ptrPath, day); err != nil {
 		log.Fatal("unable to dump file", *ptrPath, err)
 	}
+	log.Println("all done in", time.Since(elapsed))
 }
 
 const Suffix = ".json.gz"
@@ -116,14 +118,14 @@ func Dump(fileorpath string, day time.Time) error {
 }
 
 func dumpfile(filename string) error {
-	// Open and write the gzip file.
+	// Open and dump cut gzip file to stdout
 	file, err := os.Open(filename)
 	if err != nil {
 		return fmt.Errorf("could not open file %s", err)
 	}
 	defer file.Close()
 
-	// Create new reader to decompress gzip.
+	// Create new reader to decompress cut gzip.
 	reader, err := NewReader(file)
 	if err != nil {
 		return fmt.Errorf("could not create gzip reader %s", err)
@@ -146,5 +148,7 @@ func dumpfile(filename string) error {
 			break
 		}
 	}
+	// do not return error
+	// this allow to dump following files
 	return nil
 }
